@@ -169,9 +169,36 @@ BOOL DownloadTwitterVideo(LPCWSTR lpszTweetURL, LPCWSTR lpszOutputFolder = 0)
 	std::wstring srcW(lpszWeb);
 	GlobalFree(lpszWeb);
 	size_t posStart = srcW.find(L"<meta  property=\"og:video:url\" content=\"");
-	if (posStart == std::wstring::npos) return 0;
+	size_t posEnd;
+	if (posStart == std::wstring::npos)
+	{
+		//見つからない場合は、アニメーションGIFとみなして動画(mp4)のURLを探ってみる
+		posStart = srcW.find(L"PlayableMedia--gif");
+		if (posStart == std::wstring::npos) return 0;
+		posStart += 18;
+		posStart = srcW.find(L"background-image:url(", posStart);
+		if (posStart == std::wstring::npos) return 0;
+		posStart += 21;
+		posEnd = srcW.find(L')', posStart);
+		std::wstring url(srcW, posStart + 1, posEnd - posStart - 2);
+		posStart = url.rfind(L'/');
+		++posStart;
+		posEnd = url.rfind(L'.');
+		std::wstring id(url, posStart, posEnd - posStart);
+		url = L"https://video.twimg.com/tweet_video/";
+		url += id;
+		url += L".mp4";
+		WCHAR szTargetFilePath[MAX_PATH] = { 0 };
+		if (lpszOutputFolder)
+		{
+			lstrcpyW(szTargetFilePath, lpszOutputFolder);
+		}
+		PathAppendW(szTargetFilePath, id.c_str());
+		lstrcatW(szTargetFilePath, L".mp4");
+		return DownloadToFile(url.c_str(), szTargetFilePath);
+	}
 	posStart += 40;
-	size_t posEnd = srcW.find(L'\"', posStart);
+	posEnd = srcW.find(L'\"', posStart);
 	std::wstring url(srcW, posStart, posEnd - posStart);
 	lpszWeb = Download2WChar(url.c_str());
 	if (!lpszWeb) return 0;
@@ -220,7 +247,7 @@ BOOL DownloadTwitterVideo(LPCWSTR lpszTweetURL, LPCWSTR lpszOutputFolder = 0)
 		}
 	}
 	const int max = listResolution.size();
-	for (int i = 0; i< max; ++i)
+	for (int i = 0; i < max; ++i)
 	{
 		LPBYTE lpszM3U8 = DownloadToMemory(listURL[i].c_str());
 		if (!lpszM3U8) continue;
