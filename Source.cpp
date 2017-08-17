@@ -3,6 +3,7 @@
 #pragma comment(lib, "Rpcrt4")
 #pragma comment(lib, "Shlwapi")
 #pragma comment(lib, "wininet")
+
 #include <windows.h>
 #include <Shlwapi.h>
 #include <wininet.h>
@@ -51,7 +52,7 @@ LPBYTE DownloadToMemory(IN LPCWSTR lpszURL)
 				HttpSendRequestW(hRequest, 0, 0, 0, 0);
 				lpszReturn = (LPBYTE)GlobalAlloc(GMEM_FIXED, 1);
 				DWORD dwRead;
-				static BYTE szBuf[1024 * 4];
+				BYTE szBuf[1024 * 4];
 				LPBYTE lpTmp;
 				for (;;)
 				{
@@ -77,8 +78,7 @@ BOOL DownloadToFile(IN LPCWSTR lpszURL, IN LPCWSTR lpszFilePath)
 	LPBYTE lpByte = DownloadToMemory(lpszURL);
 	if (lpByte)
 	{
-		const int nSize = GlobalSize(lpByte);
-		static BYTE szBuf[1024 * 4];
+		const DWORD nSize = (DWORD)GlobalSize(lpByte);
 		const HANDLE hFile = CreateFileW(lpszFilePath, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
 		if (hFile != INVALID_HANDLE_VALUE)
 		{
@@ -164,6 +164,37 @@ LPCWSTR GetFileName(LPCWSTR lpszURL)
 BOOL DownloadTwitterVideo(LPCWSTR lpszTweetURL, LPCWSTR lpszOutputFolder = 0)
 {
 	BOOL bReturnValue = FALSE;
+	WCHAR szUserName[256] = { 0 };
+	WCHAR szTweetID[256] = { 0 };
+	{
+		std::wstring url(lpszTweetURL);
+		size_t posStart = url.find(L"twitter.com/"); //"https://twitter.com/SimonsCat/status/816626503106445313"
+		if (posStart == std::wstring::npos) return bReturnValue;
+		posStart += 12;
+		size_t posEnd;
+		posEnd = url.find(L'/', posStart);
+		if (posEnd == std::wstring::npos) return bReturnValue;
+		std::wstring strUserName(url, posStart, posEnd - posStart);
+		lstrcpyW(szUserName, strUserName.c_str());
+		posStart = url.find(L"status/", posEnd);
+		if (posStart == std::wstring::npos) return bReturnValue;
+		posStart += 7;
+		posEnd = url.find(L'/', posStart);
+		if (posEnd == std::wstring::npos)
+		{
+			std::wstring strTweetID(url, posStart);
+			lstrcpyW(szTweetID, strTweetID.c_str());
+		}
+		else
+		{
+			std::wstring strTweetID(url, posStart, posEnd - posStart);
+			lstrcpyW(szTweetID, strTweetID.c_str());
+		}
+		if (szUserName[0] == 0 || szTweetID[0] == 0)
+		{
+			return bReturnValue;
+		}
+	}
 	LPWSTR lpszWeb = Download2WChar(lpszTweetURL);
 	if (!lpszWeb) return 0;
 	std::wstring srcW(lpszWeb);
@@ -246,8 +277,8 @@ BOOL DownloadTwitterVideo(LPCWSTR lpszTweetURL, LPCWSTR lpszOutputFolder = 0)
 			GlobalFree(pwsz);
 		}
 	}
-	const int max = listResolution.size();
-	for (int i = 0; i < max; ++i)
+	const int max = (int)listResolution.size();
+	for (int i = max - 1; i < max; ++i)
 	{
 		LPBYTE lpszM3U8 = DownloadToMemory(listURL[i].c_str());
 		if (!lpszM3U8) continue;
@@ -349,7 +380,11 @@ BOOL DownloadTwitterVideo(LPCWSTR lpszTweetURL, LPCWSTR lpszOutputFolder = 0)
 					{
 						lstrcpyW(szTargetFilePath, lpszOutputFolder);
 					}
-					PathAppendW(szTargetFilePath, listResolution[i].c_str());
+					PathAppendW(szTargetFilePath, szUserName);
+					lstrcatW(szTargetFilePath, L"_");
+					lstrcatW(szTargetFilePath, szTweetID);
+					lstrcatW(szTargetFilePath, L"_");
+					lstrcatW(szTargetFilePath, listResolution[i].c_str());
 					lstrcatW(szTargetFilePath, L".mp4");
 					if (MoveFileExW(szTempMp4FilePath, szTargetFilePath, MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH))
 					{
@@ -469,6 +504,6 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPreInst, LPSTR pCmdLine, int 
 	{
 		DownloadTwitterVideo(argv[1], argv[2]);
 	}
-	if (argv) LocalFree(argv);
+	LocalFree(argv);
 	return 0;
 }
