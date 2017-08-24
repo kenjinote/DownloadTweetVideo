@@ -161,16 +161,47 @@ LPCWSTR GetFileName(LPCWSTR lpszURL)
 	return p;
 }
 
+BOOL GetRedirectURL(LPCWSTR lpszSourceURL, LPWSTR lpszRedirectURL)
+{
+	BOOL bReturn = FALSE;
+	LPWSTR lpszWeb = Download2WChar(lpszSourceURL);
+	if (!lpszWeb) return 0;
+	std::wstring srcW(lpszWeb);
+	GlobalFree(lpszWeb);
+	size_t posStart = srcW.find(L"<META http-equiv=\"refresh\" content=\"0;URL=");
+	if (posStart != std::wstring::npos)
+	{
+		posStart += 42;
+		size_t posEnd = srcW.find(L'\"', posStart);
+		if (posEnd != std::wstring::npos)
+		{
+			std::wstring strRedirectURL(srcW, posStart, posEnd - posStart);
+			lstrcpyW(lpszRedirectURL, strRedirectURL.c_str());
+			bReturn = TRUE;
+		}
+	}
+	return bReturn;
+}
+
 BOOL DownloadTwitterVideo(LPCWSTR lpszTweetURL, LPCWSTR lpszOutputFolder = 0)
 {
 	BOOL bReturnValue = FALSE;
+	WCHAR szURL[1024] = { 0 };
 	WCHAR szUserName[256] = { 0 };
 	WCHAR szTweetID[256] = { 0 };
+	if (wcsstr(lpszTweetURL, L"//t.co/"))
 	{
-		std::wstring url(lpszTweetURL);
-		size_t posStart = url.find(L"twitter.com/"); //"https://twitter.com/SimonsCat/status/816626503106445313"
+		GetRedirectURL(lpszTweetURL, szURL);
+	}
+	else
+	{
+		lstrcat(szURL, lpszTweetURL);
+	}
+	{
+		std::wstring url(szURL);
+		size_t posStart = url.find(L"//twitter.com/"); //"https://twitter.com/SimonsCat/status/816626503106445313"
 		if (posStart == std::wstring::npos) return bReturnValue;
-		posStart += 12;
+		posStart += 14;
 		size_t posEnd;
 		posEnd = url.find(L'/', posStart);
 		if (posEnd == std::wstring::npos) return bReturnValue;
@@ -195,7 +226,7 @@ BOOL DownloadTwitterVideo(LPCWSTR lpszTweetURL, LPCWSTR lpszOutputFolder = 0)
 			return bReturnValue;
 		}
 	}
-	LPWSTR lpszWeb = Download2WChar(lpszTweetURL);
+	LPWSTR lpszWeb = Download2WChar(szURL);
 	if (!lpszWeb) return 0;
 	std::wstring srcW(lpszWeb);
 	GlobalFree(lpszWeb);
@@ -224,8 +255,13 @@ BOOL DownloadTwitterVideo(LPCWSTR lpszTweetURL, LPCWSTR lpszOutputFolder = 0)
 		{
 			lstrcpyW(szTargetFilePath, lpszOutputFolder);
 		}
-		PathAppendW(szTargetFilePath, id.c_str());
+		PathAppendW(szTargetFilePath, szUserName);
+		lstrcatW(szTargetFilePath, L"_");
+		lstrcatW(szTargetFilePath, szTweetID);
+		lstrcatW(szTargetFilePath, L"_");
+		lstrcatW(szTargetFilePath, id.c_str());
 		lstrcatW(szTargetFilePath, L".mp4");
+		if (PathFileExists(szTargetFilePath)) return 0;
 		return DownloadToFile(url.c_str(), szTargetFilePath);
 	}
 	posStart += 40;
@@ -280,6 +316,18 @@ BOOL DownloadTwitterVideo(LPCWSTR lpszTweetURL, LPCWSTR lpszOutputFolder = 0)
 	const int max = (int)listResolution.size();
 	for (int i = max - 1; i < max; ++i)
 	{
+		WCHAR szTargetFilePath[MAX_PATH] = { 0 };
+		if (lpszOutputFolder)
+		{
+			lstrcpyW(szTargetFilePath, lpszOutputFolder);
+		}
+		PathAppendW(szTargetFilePath, szUserName);
+		lstrcatW(szTargetFilePath, L"_");
+		lstrcatW(szTargetFilePath, szTweetID);
+		lstrcatW(szTargetFilePath, L"_");
+		lstrcatW(szTargetFilePath, listResolution[i].c_str());
+		lstrcatW(szTargetFilePath, L".mp4");
+		if (PathFileExists(szTargetFilePath)) continue;
 		LPBYTE lpszM3U8 = DownloadToMemory(listURL[i].c_str());
 		if (!lpszM3U8) continue;
 		std::vector<std::wstring> tslist;
@@ -375,17 +423,6 @@ BOOL DownloadTwitterVideo(LPCWSTR lpszTweetURL, LPCWSTR lpszOutputFolder = 0)
 					CloseHandle(pInfo.hThread);
 					WaitForSingleObject(pInfo.hProcess, INFINITE);
 					CloseHandle(pInfo.hProcess);
-					WCHAR szTargetFilePath[MAX_PATH] = { 0 };
-					if (lpszOutputFolder)
-					{
-						lstrcpyW(szTargetFilePath, lpszOutputFolder);
-					}
-					PathAppendW(szTargetFilePath, szUserName);
-					lstrcatW(szTargetFilePath, L"_");
-					lstrcatW(szTargetFilePath, szTweetID);
-					lstrcatW(szTargetFilePath, L"_");
-					lstrcatW(szTargetFilePath, listResolution[i].c_str());
-					lstrcatW(szTargetFilePath, L".mp4");
 					if (MoveFileExW(szTempMp4FilePath, szTargetFilePath, MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH))
 					{
 						bReturnValue = TRUE;
@@ -411,39 +448,124 @@ BOOL DownloadTwitterVideo(LPCWSTR lpszTweetURL, LPCWSTR lpszOutputFolder = 0)
 	return bReturnValue;
 }
 
+BOOL GetVideoUrlList(HWND hList, LPCTSTR lpszUserID)
+{
+	TCHAR szUrl[1024] = { 0 };
+	if (StrStr(lpszUserID, TEXT("//twitter.com/")) == NULL)
+	{
+		lstrcat(szUrl, TEXT("https://twitter.com/"));
+	}
+	lstrcat(szUrl, lpszUserID);
+	LPWSTR lpszWeb = Download2WChar(szUrl);
+	if (!lpszWeb) return 0;
+	std::wstring srcW(lpszWeb);
+	GlobalFree(lpszWeb);
+	size_t posStart = 0, posEnd = 0;
+	for (;;)
+	{	
+		posStart = srcW.find(L"<a href=\"", posStart);
+		if (posStart == std::wstring::npos) break;
+		posStart += 9;
+		posEnd = srcW.find(L'\"', posStart);
+		if (posEnd == std::wstring::npos) break;
+		std::wstring strURL(srcW, posStart, posEnd - posStart);
+		if ((strURL.find(L"/status/") != std::wstring::npos) || (strURL.find(L"//t.co/") != std::wstring::npos))
+		{
+			szUrl[0] = 0;
+			if (strURL[0] == L'/')
+			{
+				lstrcat(szUrl, L"https://twitter.com");
+			}
+			lstrcat(szUrl, strURL.c_str());
+			SendMessageW(hList, LB_ADDSTRING, 0, (LPARAM)szUrl);
+		}
+		posStart = posEnd;
+	}
+	return TRUE;
+}
+
 LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
-	static HWND hEdit, hButton;
+	static HWND hEdit1, hEdit2, hButton1, hButton2, hButton3, hList;
 	switch (msg)
 	{
 	case WM_CREATE:
-		hEdit = CreateWindowEx(WS_EX_CLIENTEDGE, TEXT("EDIT"), TEXT("https://twitter.com/SimonsCat/status/816626503106445313"), WS_VISIBLE | WS_CHILD | WS_TABSTOP | ES_AUTOHSCROLL, 10, 10, 1024, 32, hWnd, 0, ((LPCREATESTRUCT)lParam)->hInstance, 0);
-		hButton = CreateWindow(TEXT("BUTTON"), TEXT("ダウンロード開始"), WS_VISIBLE | WS_CHILD | WS_TABSTOP | BS_DEFPUSHBUTTON, 10, 50, 256, 32, hWnd, (HMENU)IDOK, ((LPCREATESTRUCT)lParam)->hInstance, 0);
+		hEdit1 = CreateWindowEx(WS_EX_CLIENTEDGE, TEXT("EDIT"), TEXT("SimonsCat"), WS_VISIBLE | WS_CHILD | WS_TABSTOP | ES_AUTOHSCROLL, 10, 10, 1024, 32, hWnd, (HMENU)1000, ((LPCREATESTRUCT)lParam)->hInstance, 0);
+		hEdit2 = CreateWindowEx(WS_EX_CLIENTEDGE, TEXT("EDIT"), TEXT("300000"), WS_VISIBLE | WS_CHILD | WS_TABSTOP | ES_AUTOHSCROLL, 10, 10, 1024, 32, hWnd, (HMENU)1001, ((LPCREATESTRUCT)lParam)->hInstance, 0);
+		hButton1 = CreateWindow(TEXT("BUTTON"), TEXT("ダウンロード開始"), WS_VISIBLE | WS_CHILD | WS_TABSTOP | BS_DEFPUSHBUTTON, 10, 90, 256, 32, hWnd, (HMENU)1002, ((LPCREATESTRUCT)lParam)->hInstance, 0);
+		hButton2 = CreateWindow(TEXT("BUTTON"), TEXT("定期的に監視して新しい動画がアップされていればダウンロードする"), WS_VISIBLE | WS_CHILD | WS_TABSTOP, 10, 130, 256, 32, hWnd, (HMENU)1003, ((LPCREATESTRUCT)lParam)->hInstance, 0);
+		hButton3 = CreateWindow(TEXT("BUTTON"), TEXT("タイマーストップ"), WS_VISIBLE | WS_CHILD | WS_TABSTOP | WS_DISABLED, 10, 170, 256, 32, hWnd, (HMENU)1004, ((LPCREATESTRUCT)lParam)->hInstance, 0);
+		hList = CreateWindow(TEXT("LISTBOX"), 0, WS_CHILD | WS_DISABLED, 0, 0, 0, 0, hWnd, (HMENU)1005, ((LPCREATESTRUCT)lParam)->hInstance, 0);
 		break;
 	case WM_SIZE:
-		MoveWindow(hEdit, 10, 10, lParam & 0xFFFF - 20, 32, TRUE);
+		MoveWindow(hEdit1, 10, 10, lParam & 0xFFFF - 20, 32, TRUE);
+		MoveWindow(hEdit2, 10, 50, lParam & 0xFFFF - 20, 32, TRUE);
 		break;
 	case WM_COMMAND:
-		if (LOWORD(wParam) == IDOK)
+		if (LOWORD(wParam) == 1002)
 		{
-			EnableWindow(hEdit, FALSE);
-			EnableWindow(hButton, FALSE);
-			DWORD dwSize = GetWindowTextLengthW(hEdit);
+			EnableWindow(hEdit1, FALSE);
+			EnableWindow(hEdit2, FALSE);
+			EnableWindow(hButton1, FALSE);
+			EnableWindow(hButton2, FALSE);
+			EnableWindow(hButton3, FALSE);
+			DWORD dwSize = GetWindowTextLengthW(hEdit1);
 			if (dwSize)
 			{
 				LPWSTR lpszInputUrl = (LPWSTR)GlobalAlloc(0, sizeof(WCHAR) * (dwSize + 1));
-				GetWindowTextW(hEdit, lpszInputUrl, dwSize + 1);
+				GetWindowTextW(hEdit1, lpszInputUrl, dwSize + 1);
 				DownloadTwitterVideo(lpszInputUrl);
 				GlobalFree(lpszInputUrl);
 			}
-			EnableWindow(hEdit, TRUE);
-			EnableWindow(hButton, TRUE);
+			EnableWindow(hEdit1, TRUE);
+			EnableWindow(hEdit2, TRUE);
+			EnableWindow(hButton1, TRUE);
+			EnableWindow(hButton2, TRUE);
+			EnableWindow(hButton3, FALSE);
+		}
+		else if (LOWORD(wParam) == 1003)
+		{
+			EnableWindow(hEdit1, FALSE);
+			EnableWindow(hEdit2, FALSE);
+			EnableWindow(hButton1, FALSE);
+			EnableWindow(hButton2, FALSE);
+			EnableWindow(hButton3, TRUE);
+			const int nTimerSpan = GetDlgItemInt(hWnd, 1001, 0, 0);
+			SetTimer(hWnd, 0x1234, nTimerSpan, NULL);
+		}
+		else if (LOWORD(wParam) == 1004)
+		{
+			KillTimer(hWnd, 0x1234);
+			EnableWindow(hEdit1, TRUE);
+			EnableWindow(hEdit2, TRUE);
+			EnableWindow(hButton1, TRUE);
+			EnableWindow(hButton2, TRUE);
+			EnableWindow(hButton3, FALSE);
+		}
+		break;
+	case WM_TIMER:
+		{
+			KillTimer(hWnd, 0x1234);
+			SendMessage(hList, LB_RESETCONTENT, 0, 0);
+			TCHAR szUserID[256];
+			GetWindowText(hEdit1, szUserID, _countof(szUserID));
+			GetVideoUrlList(hList, szUserID);
+			const int nSize = (int)SendMessage(hList, LB_GETCOUNT, 0, 0);
+			for (int i = 0; i < nSize; ++i)
+			{
+				TCHAR szUrl[1024];
+				SendMessage(hList, LB_GETTEXT, i, (LPARAM)szUrl);
+				DownloadTwitterVideo(szUrl);
+			}
+			const int nTimerSpan = GetDlgItemInt(hWnd, 1001, 0, 0);
+			SetTimer(hWnd, 0x1234, nTimerSpan, NULL);
 		}
 		break;
 	case WM_CLOSE:
 		DestroyWindow(hWnd);
 		break;
 	case WM_DESTROY:
+		KillTimer(hWnd, 0x1234);
 		PostQuitMessage(0);
 		break;
 	default:
