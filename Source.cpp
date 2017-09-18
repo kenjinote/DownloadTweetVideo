@@ -591,7 +591,7 @@ VOID GetVideoUrlList(std::vector<std::wstring> * urllist, LPCWSTR lpszInput)
 {
 	if (PathFileExistsW(lpszInput)) {
 		GetVideoUrlListFromFile(urllist, lpszInput);
-	} else if (StrStrW(lpszInput, L"/status/")) {
+	} else if (StrStrW(lpszInput, L"/status/") || StrStrW(lpszInput, L"//t.co/")) {
 		urllist->push_back(lpszInput);
 	} else {
 		GetVideoUrlListFromID(urllist, lpszInput);
