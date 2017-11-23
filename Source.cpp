@@ -495,7 +495,7 @@ BOOL DownloadTwitterVideo(LPCWSTR lpszTweetURL)
 					CloseHandle(pInfo.hThread);
 					WaitForSingleObject(pInfo.hProcess, INFINITE);
 					CloseHandle(pInfo.hProcess);
-					if (MoveFileExW(szTempMp4FilePath, szTargetFilePath, MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
+					if (MoveFileExW(szTempMp4FilePath, szTargetFilePath, MOVEFILE_REPLACE_EXISTING | MOVEFILE_COPY_ALLOWED | MOVEFILE_WRITE_THROUGH)) {
 						bReturn = TRUE;
 					} else {
 						DeleteFileW(szTempMp4FilePath);
